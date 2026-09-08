@@ -1,6 +1,7 @@
 import { getProgressMessage } from "../lib/dashboard.js";
+import { WarningIcon } from "./icons.jsx";
 
-export default function DailySummary({ completed, total, percentage }) {
+export default function DailySummary({ completed, total, percentage, atRiskCount }) {
   const message = getProgressMessage(completed, total);
 
   return (
@@ -25,6 +26,15 @@ export default function DailySummary({ completed, total, percentage }) {
       </div>
 
       <p className="daily-summary-message">{message}</p>
+
+      {atRiskCount > 0 && (
+        <p className="daily-summary-risk">
+          <WarningIcon className="daily-summary-risk-icon" />
+          {atRiskCount === 1
+            ? "1 streak is at risk — complete it before the day ends."
+            : `${atRiskCount} streaks are at risk — complete them before the day ends.`}
+        </p>
+      )}
     </section>
   );
 }

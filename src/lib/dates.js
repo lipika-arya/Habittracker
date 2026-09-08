@@ -49,3 +49,8 @@ export function isFutureDate(isoDate, referenceISO = todayISO()) {
 export function isConsecutiveDay(previousISO, nextISO) {
   return diffInDays(previousISO, nextISO) === 1;
 }
+
+// Day of week for an ISO date string: 0 = Sunday ... 6 = Saturday.
+export function getDayOfWeek(isoDate) {
+  return parseISO(isoDate).getDay();
+}
