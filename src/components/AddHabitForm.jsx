@@ -15,7 +15,9 @@ export default function AddHabitForm({ onAddHabit }) {
 
   return (
     <form className="add-habit-form" onSubmit={handleSubmit}>
-      <label htmlFor="habit-name">Add a habit</label>
+      <label className="sr-only" htmlFor="habit-name">
+        Add a habit
+      </label>
       <div className="add-habit-row">
         <input
           id="habit-name"
@@ -23,10 +25,12 @@ export default function AddHabitForm({ onAddHabit }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           maxLength={MAX_LENGTH}
-          placeholder="e.g. Drink a glass of water"
+          placeholder="Add a new habit…"
           autoComplete="off"
         />
-        <button type="submit">Add</button>
+        <button type="submit" aria-label="Add habit">
+          Add
+        </button>
       </div>
     </form>
   );
