@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import Header from "./components/Header.jsx";
 import DailySummary from "./components/DailySummary.jsx";
 import FighterCard from "./components/FighterCard.jsx";
+import KnockoutBuddy from "./components/KnockoutBuddy.jsx";
+import PerfectDayCelebration from "./components/PerfectDayCelebration.jsx";
+import CatchTheStars from "./components/CatchTheStars.jsx";
 import AddHabitForm from "./components/AddHabitForm.jsx";
 import HabitList from "./components/HabitList.jsx";
 import CelebrationToast from "./components/CelebrationToast.jsx";
@@ -12,8 +15,11 @@ import { countAtRisk, getCrossedMilestone, getDailySummary } from "./lib/dashboa
 import { calculateTotalXP, getRank } from "./lib/xp.js";
 import { DEFAULT_CATEGORY_ID } from "./lib/categories.js";
 import { DAILY_FREQUENCY } from "./lib/frequency.js";
+import { loadBuddy, saveBuddy, getLevelInfo, hasPerfectDay, XP_PER_CHECKIN, XP_PER_PERFECT_DAY } from "./lib/buddy.js";
 
 const CELEBRATION_DURATION_MS = 3200;
+const BUDDY_PULSE_DURATION_MS = 900;
+const BUDDY_XP_POPUP_DURATION_MS = 1100;
 
 function getPreferredTheme() {
   if (typeof window === "undefined" || !window.matchMedia) return "light";
@@ -25,9 +31,53 @@ export default function App() {
   const [celebration, setCelebration] = useState(null);
   const [theme, setTheme] = useState(() => loadTheme() ?? getPreferredTheme());
 
+  const [buddy, setBuddy] = useState(() => loadBuddy());
+  const [buddyPulse, setBuddyPulse] = useState(false);
+  const [buddyXpPopup, setBuddyXpPopup] = useState(null);
+  const [showPerfectDayCelebration, setShowPerfectDayCelebration] = useState(false);
+  const [showBuddyGame, setShowBuddyGame] = useState(false);
+
+  const today = todayISO();
+  const summary = getDailySummary(habits, today);
+
   useEffect(() => {
     saveHabits(habits);
   }, [habits]);
+
+  useEffect(() => {
+    saveBuddy(buddy);
+  }, [buddy]);
+
+  useEffect(() => {
+    if (!buddyPulse) return undefined;
+    const timer = setTimeout(() => setBuddyPulse(false), BUDDY_PULSE_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [buddyPulse]);
+
+  useEffect(() => {
+    if (!buddyXpPopup) return undefined;
+    const timer = setTimeout(() => setBuddyXpPopup(null), BUDDY_XP_POPUP_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [buddyXpPopup]);
+
+  // Detects "today just reached 100%" off the same daily summary the rest of
+  // the dashboard renders, rather than duplicating completion logic. Guarded
+  // by buddy.perfectDays so a reload — or editing/deleting a habit that
+  // happens to leave the day at 100% — never awards it twice.
+  useEffect(() => {
+    if (summary.total === 0 || summary.percentage !== 100) return;
+    if (hasPerfectDay(buddy, today)) return;
+
+    setBuddy((prev) =>
+      hasPerfectDay(prev, today)
+        ? prev
+        : { ...prev, xp: prev.xp + XP_PER_PERFECT_DAY, perfectDays: [...prev.perfectDays, today] },
+    );
+    setBuddyPulse(true);
+    setBuddyXpPopup({ amount: XP_PER_PERFECT_DAY, key: `perfect-${today}` });
+    setShowPerfectDayCelebration(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summary.total, summary.percentage, today]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -68,8 +118,13 @@ export default function App() {
 
     setHabits(nextHabits);
 
-    // Only celebrate on a fresh check-in, never on an uncheck.
+    // Only celebrate on a fresh check-in, never on an uncheck. Buddy XP is
+    // purely additive too — an uncheck never takes XP back.
     if (isDone) return;
+
+    setBuddy((prev) => ({ ...prev, xp: prev.xp + XP_PER_CHECKIN }));
+    setBuddyPulse(true);
+    setBuddyXpPopup({ amount: XP_PER_CHECKIN, key: `checkin-${habitId}-${today}-${Date.now()}` });
 
     const oldRank = getRank(calculateTotalXP(habits, today)).name;
     const newRank = getRank(calculateTotalXP(nextHabits, today)).name;
@@ -119,8 +174,6 @@ export default function App() {
     setHabits((prev) => prev.filter((habit) => habit.id !== habitId));
   }
 
-  const today = todayISO();
-  const summary = getDailySummary(habits, today);
   const atRiskCount = countAtRisk(habits, today);
   const rank = getRank(calculateTotalXP(habits, today));
   const bestStreakOverall = habits.reduce(
@@ -128,9 +181,22 @@ export default function App() {
     0,
   );
 
+  const buddyLevelInfo = getLevelInfo(buddy.xp);
+  const buddyCanPlay = hasPerfectDay(buddy, today);
+  const buddyMood =
+    habits.length === 0 ? "resting" : buddyPulse ? "happy" : summary.percentage === 100 ? "excited" : "idle";
+
   return (
     <main className="app">
       <Header theme={theme} onToggleTheme={() => setTheme((t) => (t === "dark" ? "light" : "dark"))} />
+      <KnockoutBuddy
+        mood={buddyMood}
+        levelInfo={buddyLevelInfo}
+        xpPopup={buddyXpPopup}
+        hasHabits={habits.length > 0}
+        canPlay={buddyCanPlay}
+        onPlay={() => setShowBuddyGame(true)}
+      />
       {habits.length > 0 && <FighterCard rank={rank} bestStreak={bestStreakOverall} />}
       <DailySummary
         completed={summary.completed}
@@ -147,6 +213,18 @@ export default function App() {
         onChangeCategory={handleChangeCategory}
       />
       <CelebrationToast celebration={celebration} onDismiss={() => setCelebration(null)} />
+
+      {showPerfectDayCelebration && (
+        <PerfectDayCelebration
+          onClose={() => setShowPerfectDayCelebration(false)}
+          onPlay={() => {
+            setShowPerfectDayCelebration(false);
+            setShowBuddyGame(true);
+          }}
+        />
+      )}
+
+      {showBuddyGame && <CatchTheStars onClose={() => setShowBuddyGame(false)} />}
     </main>
   );
 }
